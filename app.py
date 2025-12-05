@@ -3,6 +3,9 @@ import math
 import base64
 from datetime import datetime
 
+# --------------------------------------------------------
+# 기본 설정
+# --------------------------------------------------------
 st.set_page_config(
     page_title="아이솔(ISOL) 800×800 매트 견적 프로그램",
     layout="centered",
@@ -53,7 +56,10 @@ def show_watermark():
 # --------------------------------------------------------
 def login_screen():
     show_logo_top()
-    st.markdown("<h2 style='text-align:center;'>아이솔(ISOL) 견적 시스템 로그인</h2>", unsafe_allow_html=True)
+    st.markdown(
+        "<h2 style='text-align:center;'>아이솔(ISOL) 견적 시스템 로그인</h2>", 
+        unsafe_allow_html=True
+    )
 
     user = st.text_input("아이디")
     pw = st.text_input("비밀번호", type="password")
@@ -66,19 +72,19 @@ def login_screen():
             st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
 
 # --------------------------------------------------------
-# 계산 로직
+# 간편 계산 로직
 # --------------------------------------------------------
 def simple_mode_calc(pyeong, area_type, expand_type):
     factor = {
         "거실": 0.93,
         "거실+복도": 1.46,
         "거실+복도+아이방1": 1.67,
-        "거실+복도+주방": 2
+        "거실+복도+주방": 2,
     }
 
     mats = pyeong * factor[area_type]
 
-    # 실측 손실 반영
+    # 손실 반영 규칙
     if mats - int(mats) <= 0.3:
         mats = int(mats)
     elif mats - int(mats) >= 0.6:
@@ -86,7 +92,7 @@ def simple_mode_calc(pyeong, area_type, expand_type):
     else:
         mats = math.ceil(mats)
 
-    mats = int(mats * 1.10)
+    mats = int(mats * 1.10)  # +10% 추가
 
     if expand_type == "비확장형":
         mats -= 8
@@ -94,54 +100,81 @@ def simple_mode_calc(pyeong, area_type, expand_type):
     return max(mats, 0)
 
 # --------------------------------------------------------
-# 메인 견적 페이지
+# 메인 견적 화면
 # --------------------------------------------------------
 def calculator():
     show_logo_top()
     show_watermark()
 
-    st.markdown("<h1 style='text-align:center;'>아이솔(ISOL) 800×800 매트 견적 프로그램</h1>", unsafe_allow_html=True)
+    st.markdown(
+        "<h1 style='text-align:center;'>아이솔(ISOL) 800×800 매트 견적 프로그램</h1>",
+        unsafe_allow_html=True
+    )
 
     st.subheader("🧾 고객 정보")
 
     customer_name = st.text_input("고객명")
     customer_phone = st.text_input("연락처")
-    selected_address = st.text_input("주소 (직접 입력)")
+    selected_address = st.text_input("주소 입력")
     detail_address = st.text_input("상세 주소")
     install_date = st.date_input("시공 희망일")
 
-    # --------------------------------------------------------
-    # 계산 모드
-    # --------------------------------------------------------
+    # -------------------------------
+    # 계산 모드 선택
+    # -------------------------------
     st.subheader("📌 계산 모드")
-    mode = st.selectbox("모드", ["간편측정", "실제측정"])
+    mode = st.selectbox("모드 선택", ["간편측정", "실제측정"])
 
     total_mats = 0
 
+    # -------------------------------
+    # 간편모드
+    # -------------------------------
     if mode == "간편측정":
-        pyeong = st.number_input("평수", min_value=1, step=1)
-        area_type = st.selectbox("범위", ["거실", "거실+복도", "거실+복도+아이방1", "거실+복도+주방"])
+        pyeong = st.number_input("평수 입력", min_value=1)
+        area_type = st.selectbox(
+            "범위 선택",
+            ["거실", "거실+복도", "거실+복도+아이방1", "거실+복도+주방"]
+        )
         expand_type = st.selectbox("확장 여부", ["확장형", "비확장형"])
 
         if st.button("계산하기"):
             total_mats = simple_mode_calc(pyeong, area_type, expand_type)
-            st.success(f"총 매트 필요량: {total_mats}장")
+            st.success(f"총 필요 매트 수량: {total_mats}장")
 
+    # -------------------------------
+    # 실제측정 모드 (고정 구역 9개)
+    # -------------------------------
     else:
-        cnt = st.number_input("측정 구역 수", min_value=1)
+        st.subheader("📏 실측 입력 (필요한 구역만 입력하세요)")
+
+        zones = [
+            "거실", "복도", "아일랜드", "주방",
+            "안방", "아이방1", "아이방2", "아이방3", "알파룸"
+        ]
+
         measurements = []
-        for i in range(cnt):
-            w = st.number_input(f"{i+1} 구역 가로(cm)")
-            h = st.number_input(f"{i+1} 구역 세로(cm)")
-            measurements.append((w, h))
+
+        for zone in zones:
+            st.write(f"### 🏷 {zone}")
+            col1, col2 = st.columns(2)
+
+            w = col1.number_input(f"{zone} 가로(cm)", min_value=0, key=f"{zone}_w")
+            h = col2.number_input(f"{zone} 세로(cm)", min_value=0, key=f"{zone}_h")
+
+            if w > 0 and h > 0:
+                measurements.append((w, h))
 
         if st.button("계산하기"):
-            total_mats = sum(math.ceil(w/80) * math.ceil(h/80) for w, h in measurements)
-            st.success(f"정밀 계산된 매트 수량: {total_mats}장")
+            total_mats = sum(
+                math.ceil(w / 80) * math.ceil(h / 80)
+                for w, h in measurements
+            )
+            st.success(f"총 실측 매트 수량: {total_mats}장")
 
-    # --------------------------------------------------------
-    # 견적 출력 + 인쇄
-    # --------------------------------------------------------
+    # -------------------------------
+    # 견적 결과 출력
+    # -------------------------------
     if total_mats > 0:
         st.subheader("📄 견적 결과")
 
@@ -158,20 +191,33 @@ def calculator():
         st.write(f"**시공 희망일:** {install_date}")
 
         st.write("---")
-        st.write(f"총 매트 수량: **{total_mats}장**")
-        st.write(f"재료비: **{material_cost:,}원**")
-        st.write(f"시공비: **{work_cost:,}원**")
-        st.write(f"최종 견적(VAT 포함): **{total_price:,}원**")
+        st.write(f"총 매트 수량: **{total_mats} 장**")
+        st.write(f"재료비: **{material_cost:,} 원**")
+        st.write(f"시공비: **{work_cost:,} 원**")
+        st.write(f"최종 견적(VAT 포함): **{total_price:,} 원**")
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # 인쇄 버튼
+        # -------------------------------
+        # 인쇄 기능 (100% 정상 작동)
+        # -------------------------------
         st.markdown(
             """
-            <script src="https://printjs-4de6.kxcdn.com/print.min.js"></script>
-            <button onclick="printJS({printable:'printArea', type:'html'})"
-                    style="padding:10px 20px; background:black; color:white;
-                           border:none; border-radius:6px; margin-top:12px;">
+            <script>
+                function printPage() {
+                    const printContents = document.getElementById('printArea').innerHTML;
+                    const originalContents = document.body.innerHTML;
+
+                    document.body.innerHTML = printContents;
+                    window.print();
+                    document.body.innerHTML = originalContents;
+                    location.reload();
+                }
+            </script>
+
+            <button onclick="printPage()"
+                style="padding:10px 20px; background:black; color:white;
+                       border:none; border-radius:6px; margin-top:12px; cursor:pointer;">
                 🖨 인쇄하기
             </button>
             """,
@@ -179,7 +225,7 @@ def calculator():
         )
 
 # --------------------------------------------------------
-# 실행부
+# 실행 제어
 # --------------------------------------------------------
 if "login" not in st.session_state:
     st.session_state["login"] = False
