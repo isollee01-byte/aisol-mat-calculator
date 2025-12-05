@@ -1,14 +1,15 @@
 ############################################################
-#   아이솔(ISOL) 800×800 매트 견적 프로그램 — REFACTORED FINAL
+#  아이솔(ISOL) 800×800 매트 견적 프로그램 — FINAL (Google Sheet)
 ############################################################
 
 import streamlit as st
 import streamlit.components.v1 as components
 import base64
-import pandas as pd
 import os
 import math
 from datetime import datetime
+
+import gspread  # Google Sheets
 
 ############################################################
 #  PAGE CONFIG
@@ -16,7 +17,7 @@ from datetime import datetime
 st.set_page_config(
     page_title="아이솔 800×800 매트 견적 프로그램",
     page_icon="🧩",
-    layout="centered"
+    layout="centered",
 )
 
 ############################################################
@@ -31,10 +32,20 @@ BACKGROUND = "#F5F7FB"
 #  LOGO BASE64
 ############################################################
 def get_base64(path: str) -> str:
+    """이미지 파일을 base64 문자열로 변환. 없으면 1픽셀 투명 이미지 사용."""
+    if not os.path.exists(path):
+        # 1x1 투명 PNG
+        placeholder = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0"
+            "lEQVR42mP8/x8AAwMB/6XlRxkAAAAASUVORK5CYII="
+        )
+        return placeholder
+
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
-def show_logo_center(path: str, width: int = 150):
+
+def show_logo_center(path: str = "isollogo.png", width: int = 150):
     b64 = get_base64(path)
     st.markdown(
         f"""
@@ -46,7 +57,7 @@ def show_logo_center(path: str, width: int = 150):
     )
 
 ############################################################
-#  GLOBAL STYLE (CSS 문자열은 .format 사용, 중괄호 이스케이프)
+#  GLOBAL STYLE
 ############################################################
 style_html = """
 <style>
@@ -101,10 +112,87 @@ ZONE_LIST = [
     "알파룸",
 ]
 
-LOG_FILE = "quote_log.csv"
+############################################################
+#  GOOGLE SHEETS 연결
+############################################################
+@st.cache_resource
+def get_worksheet():
+    """
+    st.secrets에 설정된 서비스계정/시트키로 구글 시트 워크시트 객체 반환.
+    secrets:
+      GOOGLE_SHEET_KEY
+      [gcp_service_account]  (서비스 계정 JSON 전체)
+    """
+    if "gcp_service_account" not in st.secrets or "GOOGLE_SHEET_KEY" not in st.secrets:
+        raise RuntimeError("Google Sheet 설정이 없습니다. st.secrets를 확인하세요.")
+
+    creds_dict = st.secrets["gcp_service_account"]
+    sheet_key = st.secrets["GOOGLE_SHEET_KEY"]
+
+    gc = gspread.service_account_from_dict(creds_dict)
+    sh = gc.open_by_key(sheet_key)
+    # 첫 번째 워크시트 사용 (원하면 이름으로 변경 가능)
+    ws = sh.sheet1
+    return ws
+
+
+def get_last_serial_from_sheet():
+    """시트에서 마지막 일련번호 읽기 (1열 기준, 1행은 헤더라고 가정)."""
+    try:
+        ws = get_worksheet()
+        serial_col = ws.col_values(1)  # 첫 번째 컬럼
+        if len(serial_col) <= 1:
+            return None
+        return serial_col[-1]
+    except Exception as e:
+        st.warning(f"마지막 일련번호 조회 중 오류: {e}")
+        return None
+
+
+def generate_serial() -> str:
+    """ISOL-YYYYMMDD-XXX 형식의 일련번호 생성."""
+    today = datetime.now().strftime("%Y%m%d")
+    last = get_last_serial_from_sheet()
+    if last and last.startswith(f"ISOL-{today}"):
+        try:
+            num = int(last.split("-")[-1]) + 1
+        except Exception:
+            num = 1
+    else:
+        num = 1
+    return f"ISOL-{today}-{num:03d}"
+
+
+def save_quote_to_sheet(serial, name, phone, address, mode, mats, material, total):
+    """견적 데이터를 구글 시트에 한 줄 추가."""
+    try:
+        ws = get_worksheet()
+    except Exception as e:
+        st.warning(f"구글 시트에 저장하는 중 오류가 발생했습니다: {e}")
+        return
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # 시트 컬럼 예: Serial / DateTime / Name / Phone / Address / Mode / Mats / Material / Total
+    row = [
+        serial,
+        now_str,
+        name,
+        phone,
+        address,
+        mode,
+        mats,
+        material,
+        total,
+    ]
+
+    try:
+        ws.append_row(row, value_input_option="USER_ENTERED")
+    except Exception as e:
+        st.warning(f"구글 시트 append_row 중 오류: {e}")
 
 ############################################################
-#  계산 관련 함수
+#  계산 함수
 ############################################################
 def band_round(v: float) -> int:
     base = math.floor(v)
@@ -139,50 +227,10 @@ def calc_quote(mats: int, material: str):
     return mat_cost, inst_cost, subtotal, total
 
 ############################################################
-#  SERIAL NUMBER & CSV 저장
-############################################################
-def load_last_serial():
-    if not os.path.exists(LOG_FILE):
-        return None
-    df = pd.read_csv(LOG_FILE)
-    if len(df) == 0:
-        return None
-    return df.iloc[-1]["serial"]
-
-def generate_serial() -> str:
-    today = datetime.now().strftime("%Y%m%d")
-    last = load_last_serial()
-    if last and last.startswith(f"ISOL-{today}"):
-        num = int(last.split("-")[-1]) + 1
-    else:
-        num = 1
-    return f"ISOL-{today}-{num:03d}"
-
-def save_quote_to_csv(serial, name, phone, address, mode, mats, material, total):
-    row = {
-        "serial": serial,
-        "customer": name,
-        "phone": phone,
-        "address": address,
-        "mode": mode,
-        "mats": mats,
-        "material": material,
-        "total_price": total,
-        "datetime": datetime.now().strftime("%Y-%m-%d %H:%M"),
-    }
-    new_df = pd.DataFrame([row])
-    if not os.path.exists(LOG_FILE):
-        new_df.to_csv(LOG_FILE, index=False, encoding="utf-8-sig")
-    else:
-        old_df = pd.read_csv(LOG_FILE)
-        all_df = pd.concat([old_df, new_df], ignore_index=True)
-        all_df.to_csv(LOG_FILE, index=False, encoding="utf-8-sig")
-
-############################################################
 #  LOGIN
 ############################################################
 def login_screen():
-    show_logo_center("isol_logo.png", width=160)
+    show_logo_center("isollogo.png", width=160)
     st.markdown(
         f"""
         <h2 style="text-align:center; color:{AISOL_DARK};">아이솔(ISOL) 견적 시스템 로그인</h2>
@@ -223,9 +271,9 @@ if not st.session_state["logged_in"]:
     st.stop()
 
 ############################################################
-#  메인 헤더
+#  MAIN HEADER
 ############################################################
-show_logo_center("isol_logo.png", width=120)
+show_logo_center("isollogo.png", width=120)
 st.markdown(
     f"<h2 style='text-align:center; color:{AISOL_MAIN};'>아이솔(ISOL) 800×800 매트 견적 프로그램</h2>",
     unsafe_allow_html=True,
@@ -259,7 +307,6 @@ function openPost(){
             var full = data.address;
             var inp = window.parent.document.getElementById("addr_input");
             if(!inp){
-                // fallback: 첫 번째 text input 사용
                 inp = window.parent.document.querySelector('input[type="text"]');
             }
             if(inp){
@@ -291,7 +338,7 @@ material = st.selectbox("매트 재질 선택", list(MATERIAL_PRICE.keys()))
 st.markdown("</div>", unsafe_allow_html=True)
 
 ############################################################
-#  견적 결과 HTML 저장 변수
+#  견적 결과 HTML 보관 변수
 ############################################################
 print_html = None
 
@@ -314,15 +361,16 @@ if mode == "간편측정":
         st.info(f"최종 견적(VAT 포함): {total:,} 원")
 
         serial = generate_serial()
-        save_quote_to_csv(serial, customer_name, customer_phone, address, mode, mats, material, total)
+        save_quote_to_sheet(
+            serial, customer_name, customer_phone, address, mode, mats, material, total
+        )
 
-        logo_b64 = get_base64("isol_logo.png")
+        logo_b64 = get_base64("isollogo.png")
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+        # 워터마크: 오른쪽 하단 작은 로고
         print_html = f"""
         <div id="print-area" style="position:relative; padding:20px; font-family:Arial, sans-serif;">
-            <img src="data:image/png;base64,{logo_b64}"
-                 style="position:absolute; top:25%; left:20%; width:350px; opacity:0.08; z-index:-1;">
             <h2 style="color:{AISOL_MAIN}; margin-bottom:4px;">아이솔(ISOL) 매트 견적서</h2>
             <p style="margin-top:0;">일련번호: <b>{serial}</b></p>
             <p>견적일자: {today}</p>
@@ -343,6 +391,9 @@ if mode == "간편측정":
             <p>재료비: {mat_cost:,} 원</p>
             <p>시공비: {inst_cost:,} 원</p>
             <p><b>최종 견적 (VAT 포함): {total:,} 원</b></p>
+
+            <img src="data:image/png;base64,{logo_b64}"
+                 style="position:absolute; right:20px; bottom:20px; width:120px; opacity:0.5;">
         </div>
         """
 
@@ -390,16 +441,15 @@ if mode == "실제측정":
         st.info(f"최종 견적(VAT 포함): {total:,} 원")
 
         serial = generate_serial()
-        save_quote_to_csv(serial, customer_name, customer_phone, address, mode, total_mats, material, total)
+        save_quote_to_sheet(
+            serial, customer_name, customer_phone, address, mode, total_mats, material, total
+        )
 
-        logo_b64 = get_base64("isol_logo.png")
+        logo_b64 = get_base64("isollogo.png")
         today = datetime.now().strftime("%Y-%m-%d %H:%M")
 
         print_html = f"""
         <div id="print-area" style="position:relative; padding:20px; font-family:Arial, sans-serif;">
-            <img src="data:image/png;base64,{logo_b64}"
-                 style="position:absolute; top:25%; left:20%; width:350px; opacity:0.08; z-index:-1;">
-
             <h2 style="color:{AISOL_MAIN}; margin-bottom:4px;">아이솔(ISOL) 매트 견적서</h2>
             <p style="margin-top:0;">일련번호: <b>{serial}</b></p>
             <p>견적일자: {today}</p>
@@ -425,6 +475,9 @@ if mode == "실제측정":
             <p>재료비: {mat_cost:,} 원</p>
             <p>시공비: {inst_cost:,} 원</p>
             <p><b>최종 견적 (VAT 포함): {total:,} 원</b></p>
+
+            <img src="data:image/png;base64,{logo_b64}"
+                 style="position:absolute; right:20px; bottom:20px; width:120px; opacity:0.5;">
         </div>
         """
 
