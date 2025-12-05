@@ -193,4 +193,80 @@ def main():
     # ---------------- 실측측정 ----------------
     else:
         st.info("실측모드에서는 확장/비확장 개념 없이, 실제 치수 기준으로 계산합니다.")
-        zones = ["거실", "복도", "아일랜드", "주방", "안방", "
+        zones = ["거실", "복도", "아일랜드", "주방", "안방", "아이방1", "아이방2", "아이방3", "알파룸"]
+
+        measures = []
+        st.subheader("📏 실측 입력 (cm 단위, 필요한 구역만 입력)")
+
+        for zone in zones:
+            st.write(f"### 🏷 {zone}")
+            c1, c2 = st.columns(2)
+            w = c1.number_input(f"{zone} 가로(cm)", min_value=0.0, step=1.0, key=f"{zone}_w")
+            h = c2.number_input(f"{zone} 세로(cm)", min_value=0.0, step=1.0, key=f"{zone}_h")
+            if w > 0 and h > 0:
+                measures.append((w, h))
+
+        if st.button("계산하기", key="precision_calc"):
+            total_mats = precision_mode_calc(measures, size)
+            st.success(f"실측 기반 총 필요 매트 수량: {total_mats} 장")
+
+    # ---------------- 견적 결과 & 인쇄 ----------------
+    if total_mats > 0:
+        st.subheader("📄 견적 결과")
+
+        mat_cost = total_mats * material_price[material]
+
+        side_mm = int(size.split("×")[0])
+        front_number = side_mm // 100
+        labor_per_mat = front_number * side_mm          # 600×600 → 6×600=3600
+        labor_cost = total_mats * labor_per_mat
+
+        default_final = mat_cost + labor_cost
+        final_price = st.number_input(
+            "최종 견적금액 (수정 가능, VAT 포함 금액 입력 권장)",
+            value=int(default_final),
+            step=1000
+        )
+
+        st.write(f"- 매트 수량: **{total_mats} 장**")
+        st.write(f"- 재료비: **{mat_cost:,} 원**")
+        st.write(f"- 시공비: **{labor_cost:,} 원**")
+        st.write(f"- 계산 기준 총액(수정 전): **{default_final:,} 원**")
+        st.write(f"- 최종 견적(수정 후): **{final_price:,} 원**")
+
+        if st.button("견적서 인쇄"):
+            # 인쇄 페이지로 넘길 파라미터 구성
+            params = {
+                "customer": customer,
+                "phone": phone,
+                "address": address,
+                "date": str(date),
+                "material": material,
+                "size": size,
+                "extend": extend_type if mode == "간편측정" else "실측",
+                "mats": str(total_mats),
+                "mat_cost": str(mat_cost),
+                "labor_cost": str(labor_cost),
+                "final_cost": str(final_price),
+            }
+            query = urlencode(params, doseq=True)
+            st.markdown(
+                f"""
+                <script>
+                    window.open('/print?{query}', '_blank');
+                </script>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+# --------------------------------------------------------
+# 실행
+# --------------------------------------------------------
+if "login" not in st.session_state:
+    st.session_state["login"] = False
+
+if not st.session_state["login"]:
+    login()
+else:
+    main()
