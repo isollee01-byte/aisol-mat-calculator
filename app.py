@@ -26,7 +26,7 @@ def show_logo_top():
             unsafe_allow_html=True,
         )
     except:
-        st.error("⚠ isollogo.png 파일이 없습니다.")
+        st.error("⚠ isollogo.png 파일이 없습니다. 같은 폴더에 넣어주세요.")
 
 def show_watermark():
     try:
@@ -43,6 +43,35 @@ def show_watermark():
     except:
         pass
 
+# --------------------------------------------------------
+# 공통: 면적 → 장수 계산 함수
+# --------------------------------------------------------
+def mats_from_area(total_area_cm2: float, mat_side_cm: int) -> int:
+    """
+    total_area_cm2: 전체 바닥 면적 (cm^2)
+    mat_side_cm: 매트 한 변 (cm), 예: 80, 100 등
+    """
+    if total_area_cm2 <= 0:
+        return 0
+
+    mat_area = mat_side_cm * mat_side_cm
+    raw = total_area_cm2 / mat_area
+
+    if raw <= 0:
+        return 0
+
+    frac = raw - int(raw)
+    if frac <= 0.3:
+        mats = int(raw)
+    elif frac >= 0.6:
+        mats = int(raw) + 1
+    else:
+        mats = math.ceil(raw)
+
+    # +10% 여유
+    mats = int(mats * 1.10)
+
+    return max(mats, 0)
 
 # --------------------------------------------------------
 # 로그인 화면
@@ -61,35 +90,35 @@ def login_screen():
         else:
             st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
 
-
 # --------------------------------------------------------
 # 간편측정(평수) 계산
+#  - 800×800 기준 예상 장수를 factor로 사용
+#  - 이를 면적으로 변환 후, 실제 선택된 매트 사이즈로 재계산
 # --------------------------------------------------------
-def simple_mode_calc(pyeong, area_type, expand_type):
-    factor = {
+def simple_mode_calc_with_size(pyeong, area_type, expand_type, mat_side_cm):
+    # 800×800 기준 장수 계수
+    factor_800 = {
         "거실": 0.93,
         "거실+복도": 1.46,
         "거실+복도+아이방1": 1.67,
         "거실+복도+주방": 2,
     }
 
-    mats = pyeong * factor[area_type]
+    # 800×800 기준 예상 매트 장수
+    mats_800 = pyeong * factor_800[area_type]
 
-    # 손실 반영
-    if mats - int(mats) <= 0.3:
-        mats = int(mats)
-    elif mats - int(mats) >= 0.6:
-        mats = int(mats) + 1
-    else:
-        mats = math.ceil(mats)
+    # 1장 = 80cm × 80cm 기준 면적으로 변환
+    base_mat_side_800 = 80
+    base_area = mats_800 * (base_mat_side_800 ** 2)  # cm^2
 
-    mats = int(mats * 1.10)  # +10%
+    # 선택된 매트 크기에 맞춰 장수 재계산
+    mats = mats_from_area(base_area, mat_side_cm)
 
+    # 비확장형인 경우 -8장
     if expand_type == "비확장형":
         mats -= 8
 
     return max(mats, 0)
-
 
 # --------------------------------------------------------
 # 메인 견적 시스템
@@ -121,27 +150,28 @@ def calculator():
         ["일반 TPU", "프리미엄 TPU", "패브릭 TPU"],
     )
 
-    material_price = {
+    material_price_map = {
         "일반 TPU": 39000,
         "프리미엄 TPU": 42000,
         "패브릭 TPU": 50000,
-    }[material_type]
+    }
+    material_unit_price = material_price_map[material_type]
 
     # -----------------------------------
     # 매트 크기 선택
     # -----------------------------------
     st.subheader("📌 매트 크기 선택")
 
-    mat_size = st.selectbox(
+    mat_size_str = st.selectbox(
         "매트 크기 선택",
         ["600×600", "700×700", "800×800", "1000×1000", "1200×1200"],
     )
 
-    side = int(mat_size.split("×")[0])  # 한 변(cm)
-    front_number = side // 100
-    work_cost_per_mat = front_number * side  # 시공비 공식: 앞 숫자 × 한 변
+    mat_side_cm = int(mat_size_str.split("×")[0])  # 한 변 cm 기준
 
-    mat_area = side * side  # 1장 면적(cm²)
+    # 시공비/장 = (앞 숫자) × (한 변 cm)
+    front_number = mat_side_cm // 100
+    work_cost_per_mat = front_number * mat_side_cm
 
     # -----------------------------------
     # 계산 모드 선택
@@ -152,7 +182,7 @@ def calculator():
     total_mats = 0
 
     # -------------------------
-    # 간편측정(평수)
+    # 간편측정(평수 기반)
     # -------------------------
     if mode == "간편측정":
         pyeong = st.number_input("평수 입력", min_value=1)
@@ -163,32 +193,35 @@ def calculator():
         expand_type = st.selectbox("확장 여부", ["확장형", "비확장형"])
 
         if st.button("계산하기"):
-            total_mats = simple_mode_calc(pyeong, area_type, expand_type)
+            total_mats = simple_mode_calc_with_size(
+                pyeong, area_type, expand_type, mat_side_cm
+            )
             st.success(f"총 필요 매트 수량: {total_mats}장")
 
     # -------------------------
-    # 실제측정(고정 9구역)
+    # 실제측정(9개 고정 구역)
     # -------------------------
     else:
         st.subheader("📏 실측 입력 (필요한 구역만 입력하세요)")
 
-        zones = ["거실", "복도", "아일랜드", "주방", "안방",
-                 "아이방1", "아이방2", "아이방3", "알파룸"]
+        zones = [
+            "거실", "복도", "아일랜드", "주방",
+            "안방", "아이방1", "아이방2", "아이방3", "알파룸",
+        ]
 
-        total_area = 0
+        total_area_cm2 = 0
 
         for zone in zones:
             st.write(f"### 🏷 {zone}")
             col1, col2 = st.columns(2)
-
             w = col1.number_input(f"{zone} 가로(cm)", min_value=0, key=f"{zone}_w")
             h = col2.number_input(f"{zone} 세로(cm)", min_value=0, key=f"{zone}_h")
 
             if w > 0 and h > 0:
-                total_area += (w * h)
+                total_area_cm2 += (w * h)
 
         if st.button("계산하기"):
-            total_mats = math.ceil(total_area / mat_area)
+            total_mats = mats_from_area(total_area_cm2, mat_side_cm)
             st.success(f"총 실측 매트 수량: {total_mats}장")
 
     # -------------------------
@@ -198,12 +231,12 @@ def calculator():
         st.subheader("📄 견적 결과")
 
         # 재료비
-        material_cost = total_mats * material_price
+        material_cost = total_mats * material_unit_price
 
-        # 시공비 (신규 공식 적용)
+        # 시공비 (매트 크기에 따라 자동 결정)
         work_cost = total_mats * work_cost_per_mat
 
-        # VAT 포함
+        # VAT 포함 최종 견적
         total_price = int((material_cost + work_cost) * 1.10)
 
         st.markdown("<div id='printArea'>", unsafe_allow_html=True)
@@ -212,7 +245,7 @@ def calculator():
         st.write(f"**연락처:** {customer_phone}")
         st.write(f"**주소:** {selected_address} {detail_address}")
         st.write(f"**매트 재질:** {material_type}")
-        st.write(f"**매트 크기:** {mat_size}")
+        st.write(f"**매트 크기:** {mat_size_str}")
         st.write(f"**시공 희망일:** {install_date}")
         st.write("---")
         st.write(f"매트 수량: **{total_mats:,} 장**")
