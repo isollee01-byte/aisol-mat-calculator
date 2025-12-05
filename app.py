@@ -106,46 +106,8 @@ def calculator():
 
     customer_name = st.text_input("고객명")
     customer_phone = st.text_input("연락처")
-
-    # --------------------------------------------------------
-    # 주소 입력 + 카카오 주소검색 자동 입력
-    # --------------------------------------------------------
-    st.markdown("### 📍 주소 검색")
-
-    selected_address = st.text_input("검색된 주소", key="selected_address")
+    selected_address = st.text_input("주소 (직접 입력)")
     detail_address = st.text_input("상세 주소")
-
-    # 카카오 주소검색 스크립트
-    st.markdown(
-        """
-        <script src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
-
-        <script>
-            function openDaumPostcode() {
-                new daum.Postcode({
-                    oncomplete: function(data) {
-                        const addr = data.roadAddress ? data.roadAddress : data.jibunAddress;
-
-                        // Streamlit 입력창 DOM 직접 수정
-                        const inputBox = window.parent.document.querySelector('input[data-testid="stTextInput"][aria-label="검색된 주소"]');
-                        if (inputBox) {
-                            inputBox.value = addr;
-                            inputBox.dispatchEvent(new Event('input', { bubbles: true }));
-                        }
-                    }
-                }).open();
-            }
-        </script>
-
-        <button onclick="openDaumPostcode()" 
-                style="padding:10px 20px; background:#4a90e2; color:white;
-                       border:none; border-radius:6px; margin-top:8px;">
-            📍 주소 검색
-        </button>
-        """,
-        unsafe_allow_html=True
-    )
-
     install_date = st.date_input("시공 희망일")
 
     # --------------------------------------------------------
