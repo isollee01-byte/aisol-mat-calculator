@@ -1,31 +1,44 @@
 import streamlit as st
+import base64
 
 st.set_page_config(page_title="견적서 인쇄", layout="wide")
 
-# Query params 받기
-q = st.query_params
+# ------------------------------
+# 쿼리 파라미터 수신
+# ------------------------------
+params = st.experimental_get_query_params()
 
-customer = q.get("customer", "")
-phone = q.get("phone", "")
-address = q.get("address", "")
-date = q.get("date", "")
-material = q.get("material", "")
-size = q.get("size", "")
-extend_type = q.get("extend", "")
-mats = q.get("mats", "")
-mat_cost = q.get("mat_cost", "")
-labor_cost = q.get("labor_cost", "")
-final_cost = q.get("final_cost", "")
+def get_param(key, default=""):
+    val = params.get(key, [default])
+    return val[0] if isinstance(val, list) else val
 
-# 로고
-import base64
-try:
-    with open("isollogo.png", "rb") as f:
-        LOGO_B64 = base64.b64encode(f.read()).decode()
-except:
-    LOGO_B64 = ""
+customer   = get_param("customer")
+phone      = get_param("phone")
+address    = get_param("address")
+date       = get_param("date")
+material   = get_param("material")
+size       = get_param("size")
+extend     = get_param("extend")
+mats       = get_param("mats", "0")
+mat_cost   = int(get_param("mat_cost", "0") or 0)
+labor_cost = int(get_param("labor_cost", "0") or 0)
+final_cost = int(get_param("final_cost", "0") or 0)
 
-# HTML 전문 견적서
+# ------------------------------
+# 로고 Base64
+# ------------------------------
+def load_logo_base64():
+    try:
+        with open("isollogo.png", "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except:
+        return ""
+
+LOGO_B64 = load_logo_base64()
+
+# ------------------------------
+# A4 견적서 HTML
+# ------------------------------
 html = f"""
 <!DOCTYPE html>
 <html lang="ko">
@@ -117,7 +130,7 @@ td {{
 <table>
 <tr><th>매트 재질</th><td>{material}</td></tr>
 <tr><th>매트 크기</th><td>{size}</td></tr>
-<tr><th>확장 여부</th><td>{extend_type}</td></tr>
+<tr><th>계산 방식</th><td>{extend}</td></tr>
 <tr><th>시공 희망일</th><td>{date}</td></tr>
 </table>
 
@@ -125,9 +138,9 @@ td {{
 <div class="section-header">④ 비용 산출 내역</div>
 <table>
 <tr><th>총 매트 수량</th><td>{mats} 장</td></tr>
-<tr><th>재료비</th><td>{int(mat_cost):,} 원</td></tr>
-<tr><th>시공비</th><td>{int(labor_cost):,} 원</td></tr>
-<tr><th><b>최종 견적(VAT 포함)</b></th><td><b>{int(final_cost):,} 원</b></td></tr>
+<tr><th>재료비</th><td>{mat_cost:,} 원</td></tr>
+<tr><th>시공비</th><td>{labor_cost:,} 원</td></tr>
+<tr><th><b>최종 견적(VAT 포함)</b></th><td><b>{final_cost:,} 원</b></td></tr>
 </table>
 
 
