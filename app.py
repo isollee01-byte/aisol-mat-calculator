@@ -7,7 +7,7 @@ from datetime import datetime
 # 기본 설정
 # --------------------------------------------------------
 st.set_page_config(
-    page_title="아이솔(ISOL) 800×800 매트 견적 프로그램",
+    page_title="아이솔(ISOL) 매트 견적프로그램",
     layout="centered",
 )
 
@@ -37,12 +37,12 @@ def show_watermark():
         logo = get_base64("isollogo.png")
         st.markdown(
             f"""
-            <div style="
+            <div style='
                 position: fixed;
                 bottom: 25px;
                 right: 25px;
                 opacity: 0.08;
-                z-index: 999;">
+                z-index: 999;'>
                 <img src="data:image/png;base64,{logo}" width="160">
             </div>
             """,
@@ -51,15 +51,13 @@ def show_watermark():
     except:
         pass
 
+
 # --------------------------------------------------------
 # 로그인 화면
 # --------------------------------------------------------
 def login_screen():
     show_logo_top()
-    st.markdown(
-        "<h2 style='text-align:center;'>아이솔(ISOL) 견적 시스템 로그인</h2>", 
-        unsafe_allow_html=True
-    )
+    st.markdown("<h2 style='text-align:center;'>아이솔(ISOL) 견적 시스템 로그인</h2>", unsafe_allow_html=True)
 
     user = st.text_input("아이디")
     pw = st.text_input("비밀번호", type="password")
@@ -67,9 +65,10 @@ def login_screen():
     if st.button("로그인"):
         if user == "isol_admin" and pw == "isol202512!":
             st.session_state["login"] = True
-            st.success("로그인 성공!")
+            st.experimental_rerun()
         else:
             st.error("아이디 또는 비밀번호가 올바르지 않습니다.")
+
 
 # --------------------------------------------------------
 # 간편 계산 로직
@@ -92,12 +91,13 @@ def simple_mode_calc(pyeong, area_type, expand_type):
     else:
         mats = math.ceil(mats)
 
-    mats = int(mats * 1.10)  # +10% 추가
+    mats = int(mats * 1.10)  # +10%
 
     if expand_type == "비확장형":
         mats -= 8
 
     return max(mats, 0)
+
 
 # --------------------------------------------------------
 # 메인 견적 화면
@@ -106,10 +106,7 @@ def calculator():
     show_logo_top()
     show_watermark()
 
-    st.markdown(
-        "<h1 style='text-align:center;'>아이솔(ISOL) 800×800 매트 견적 프로그램</h1>",
-        unsafe_allow_html=True
-    )
+    st.markdown("<h1 style='text-align:center;'>아이솔(ISOL) 매트 견적프로그램</h1>", unsafe_allow_html=True)
 
     st.subheader("🧾 고객 정보")
 
@@ -119,46 +116,52 @@ def calculator():
     detail_address = st.text_input("상세 주소")
     install_date = st.date_input("시공 희망일")
 
-    # -------------------------------
-    # 계산 모드 선택
-    # -------------------------------
-    st.subheader("📌 계산 모드")
+    # ---------------------------------------
+    # TPU 재질 선택
+    # ---------------------------------------
+    st.subheader("📌 재질 선택")
+
+    material_type = st.selectbox(
+        "매트 재질 선택",
+        ["일반 TPU", "프리미엄 TPU", "패브릭 TPU"]
+    )
+
+    price_map = {
+        "일반 TPU": 39000,
+        "프리미엄 TPU": 42000,
+        "패브릭 TPU": 50000
+    }
+
+    unit_price = price_map[material_type]
+
+    # ---------------------------------------
+    # 계산 모드
+    # ---------------------------------------
+    st.subheader("📌 계산 모드 선택")
     mode = st.selectbox("모드 선택", ["간편측정", "실제측정"])
 
     total_mats = 0
 
-    # -------------------------------
     # 간편모드
-    # -------------------------------
     if mode == "간편측정":
         pyeong = st.number_input("평수 입력", min_value=1)
-        area_type = st.selectbox(
-            "범위 선택",
-            ["거실", "거실+복도", "거실+복도+아이방1", "거실+복도+주방"]
-        )
+        area_type = st.selectbox("범위 선택", ["거실", "거실+복도", "거실+복도+아이방1", "거실+복도+주방"])
         expand_type = st.selectbox("확장 여부", ["확장형", "비확장형"])
 
         if st.button("계산하기"):
             total_mats = simple_mode_calc(pyeong, area_type, expand_type)
             st.success(f"총 필요 매트 수량: {total_mats}장")
 
-    # -------------------------------
-    # 실제측정 모드 (고정 구역 9개)
-    # -------------------------------
+    # 실제 측정 모드
     else:
-        st.subheader("📏 실측 입력 (필요한 구역만 입력하세요)")
+        st.subheader("📏 실측 입력 (필요한 구역만 입력)")
 
-        zones = [
-            "거실", "복도", "아일랜드", "주방",
-            "안방", "아이방1", "아이방2", "아이방3", "알파룸"
-        ]
-
+        zones = ["거실", "복도", "아일랜드", "주방", "안방", "아이방1", "아이방2", "아이방3", "알파룸"]
         measurements = []
 
         for zone in zones:
             st.write(f"### 🏷 {zone}")
             col1, col2 = st.columns(2)
-
             w = col1.number_input(f"{zone} 가로(cm)", min_value=0, key=f"{zone}_w")
             h = col2.number_input(f"{zone} 세로(cm)", min_value=0, key=f"{zone}_h")
 
@@ -166,28 +169,25 @@ def calculator():
                 measurements.append((w, h))
 
         if st.button("계산하기"):
-            total_mats = sum(
-                math.ceil(w / 80) * math.ceil(h / 80)
-                for w, h in measurements
-            )
+            total_mats = sum(math.ceil(w/80) * math.ceil(h/80) for w, h in measurements)
             st.success(f"총 실측 매트 수량: {total_mats}장")
 
-    # -------------------------------
-    # 견적 결과 출력
-    # -------------------------------
+    # ---------------------------------------
+    # 견적 출력
+    # ---------------------------------------
     if total_mats > 0:
         st.subheader("📄 견적 결과")
 
-        material_cost = total_mats * 40000
+        material_cost = total_mats * unit_price
         work_cost = int(material_cost * 0.165)
         total_price = material_cost + work_cost
 
-        # 인쇄 영역
         st.markdown("<div id='printArea'>", unsafe_allow_html=True)
 
         st.write(f"**고객명:** {customer_name}")
         st.write(f"**연락처:** {customer_phone}")
         st.write(f"**주소:** {selected_address} {detail_address}")
+        st.write(f"**재질 선택:** {material_type}")
         st.write(f"**시공 희망일:** {install_date}")
 
         st.write("---")
@@ -198,9 +198,7 @@ def calculator():
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # -------------------------------
-        # 인쇄 기능 (100% 정상 작동)
-        # -------------------------------
+        # 인쇄 기능
         st.markdown(
             """
             <script>
@@ -223,6 +221,7 @@ def calculator():
             """,
             unsafe_allow_html=True
         )
+
 
 # --------------------------------------------------------
 # 실행 제어
