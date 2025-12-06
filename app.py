@@ -8,8 +8,9 @@ import datetime
 # --------------------------------------------------------
 st.set_page_config(page_title="견적프로그램", layout="centered")
 
+
 # --------------------------------------------------------
-# 로고 표시
+# 로고 표시 함수
 # --------------------------------------------------------
 def get_base64(file):
     with open(file, "rb") as f:
@@ -24,11 +25,11 @@ def show_logo():
             unsafe_allow_html=True,
         )
     except:
-        st.warning("로고 파일을 찾을 수 없습니다. (isollogo.png)")
+        st.warning("⚠ 로고 파일(isollogo.png)을 찾을 수 없습니다.")
 
 
 # --------------------------------------------------------
-# 장수 계산
+# 매트 장수 계산
 # --------------------------------------------------------
 def mats_from_area(area_cm2, mat_side_cm):
     if area_cm2 <= 0:
@@ -38,6 +39,7 @@ def mats_from_area(area_cm2, mat_side_cm):
     raw = area_cm2 / mat_area
 
     frac = raw - int(raw)
+
     if frac <= 0.3:
         mats = int(raw)
     elif frac >= 0.6:
@@ -45,7 +47,7 @@ def mats_from_area(area_cm2, mat_side_cm):
     else:
         mats = math.ceil(raw)
 
-    mats = int(mats * 1.10)  # +10% 여유량 추가
+    mats = int(mats * 1.10)  # +10% 여유량
     return max(mats, 0)
 
 
@@ -79,6 +81,8 @@ def build_estimate_html(
     material, size, mats,
     material_cost, install_cost, total_cost
 ):
+    today_str = datetime.date.today().strftime("%Y-%m-%d")
+
     html = f"""
 <html>
 <head>
@@ -94,26 +98,25 @@ body {{
 h1 {{
     text-align: center;
     color: #1E88E5;
-    font-size: 32px;
-    margin-bottom: 25px;
+    font-size: 30px;
 }}
 
 .section {{
-    border: 1px solid #cccccc;
+    border: 1px solid #d0d0d0;
     border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 25px;
+    padding: 18px;
+    margin-bottom: 22px;
 }}
 
 .title {{
-    font-size: 20px;
+    font-size: 19px;
     font-weight: bold;
     margin-bottom: 8px;
 }}
 
 .row {{
     font-size: 16px;
-    margin: 4px 0;
+    margin: 5px 0;
 }}
 
 .value {{
@@ -129,7 +132,7 @@ h1 {{
 <div class="section">
     <div class="title">■ 견적 정보</div>
     <div class="row">견적번호: <span class="value">{estimate_id}</span></div>
-    <div class="row">작성일: <span class="value">{datetime.date.today()}</span></div>
+    <div class="row">작성일: <span class="value">{today_str}</span></div>
 </div>
 
 <div class="section">
@@ -144,7 +147,7 @@ h1 {{
     <div class="title">■ 시공 내용</div>
     <div class="row">재질: <span class="value">{material}</span></div>
     <div class="row">매트 크기: <span class="value">{size}</span></div>
-    <div class="row">필요 매트 수량: <span class="value">{mats} 장</span></div>
+    <div class="row">총 매트 수량: <span class="value">{mats} 장</span></div>
 </div>
 
 <div class="section">
@@ -165,6 +168,7 @@ window.onload = function() {{
 </body>
 </html>
 """
+
     return html
 
 
@@ -180,9 +184,11 @@ def login_page():
 
     if st.button("로그인"):
         if user == "isol25" and pw == "isol202512!":
+
             st.session_state["login"] = True
 
             today = datetime.date.today().strftime("%Y%m%d")
+
             if "last_date" not in st.session_state or st.session_state["last_date"] != today:
                 st.session_state["counter"] = 1
                 st.session_state["last_date"] = today
@@ -193,16 +199,17 @@ def login_page():
 
 
 # --------------------------------------------------------
-# 메인 계산 페이지
+# 메인 계산기
 # --------------------------------------------------------
 def calculator():
+
     show_logo()
     st.markdown("<h2 style='text-align:center;'>견적프로그램</h2>", unsafe_allow_html=True)
 
     today = datetime.date.today().strftime("%Y%m%d")
     estimate_id = f"ISOL-{today}-{st.session_state['counter']:03d}"
 
-    # 고객 정보 입력
+    # ------------------------------ 고객 정보 ------------------------------
     st.subheader("고객 정보")
     name = st.text_input("고객명")
     phone = st.text_input("연락처")
@@ -210,9 +217,9 @@ def calculator():
     detail = st.text_input("상세 주소")
     install_date = st.date_input("시공 희망일")
 
-    # 단가표
+    # ------------------------------ 단가표 ------------------------------
     mat_unit_price = {
-        "일반 TPU": {600: 22000, 700: 30000, 800: 39000, 1000: 61000, 12000: 88000},
+        "일반 TPU": {600: 22000, 700: 30000, 800: 39000, 1000: 61000, 1200: 88000},
         "프리미엄 TPU": {600: 24000, 700: 32000, 800: 42000, 1000: 66000, 1200: 94500},
         "패브릭 TPU": {600: 28000, 700: 38500, 800: 50000, 1000: 78000, 1200: 112500},
     }
@@ -226,18 +233,16 @@ def calculator():
     side_mm = int(size.split("×")[0])
     mat_cm = side_mm / 10
 
-    # 계산 모드
+    # ------------------------------ 계산모드 ------------------------------
     st.subheader("계산모드")
     mode = st.selectbox("선택", ["간편측정", "실제측정"])
 
     mats = 0
 
+    # 간편측정
     if mode == "간편측정":
         p = st.number_input("평수", min_value=1)
-        area_type = st.selectbox(
-            "범위",
-            ["거실", "거실+복도", "거실+복도+아이방1", "거실+복도+주방"],
-        )
+        area_type = st.selectbox("범위", ["거실", "거실+복도", "거실+복도+아이방1", "거실+복도+주방"])
         expand = st.selectbox("확장여부", ["확장형", "비확장형"])
 
         if st.button("계산하기"):
@@ -260,14 +265,14 @@ def calculator():
             mats = mats_from_area(total_area, mat_cm)
             st.success(f"총 매트 수량: {mats} 장")
 
-    # 견적 출력
+    # ------------------------------ 견적 출력 ------------------------------
     if mats > 0:
+
         price_mat = mat_unit_price[material][side_mm]
         price_install = install_price[side_mm]
 
         material_cost = mats * price_mat
         install_cost = mats * price_install
-
         total_cost = int((material_cost + install_cost) * 1.10)
 
         st.subheader("견적 결과")
@@ -275,16 +280,25 @@ def calculator():
         st.info(f"시공비: {install_cost:,} 원")
         st.success(f"최종 견적(VAT 포함): {total_cost:,} 원")
 
-        # 견적번호 증가 버튼 (인쇄 시 증가)
+        # ------------------------------ 인쇄 기능 복원 ------------------------------
         if st.button("견적서 인쇄하기"):
+
             html = build_estimate_html(
                 estimate_id, name, phone, addr, detail, install_date,
                 material, size, mats, material_cost, install_cost, total_cost
             )
 
             b64 = base64.b64encode(html.encode()).decode()
-            href = f'<a href="data:text/html;base64,{b64}" download="{estimate_id}.html" target="_blank">▶ 견적서 열기 및 인쇄</a>'
-            st.markdown(href, unsafe_allow_html=True)
+
+            print_js = f"""
+                <script>
+                    var newWin = window.open();
+                    newWin.document.write(atob("{b64}"));
+                    newWin.document.close();
+                </script>
+            """
+
+            st.components.v1.html(print_js, height=0, width=0)
 
             st.session_state["counter"] += 1
             st.rerun()
