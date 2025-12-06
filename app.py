@@ -2,7 +2,6 @@ import streamlit as st
 import math
 import base64
 import datetime
-import uuid
 
 # --------------------------------------------------------
 # 기본 설정
@@ -16,6 +15,7 @@ def get_base64(file):
     with open(file, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
+
 def show_logo():
     try:
         logo = get_base64("isollogo.png")
@@ -26,11 +26,13 @@ def show_logo():
     except:
         st.warning("로고 파일(isollogo.png)을 찾을 수 없습니다.")
 
+
 # --------------------------------------------------------
 # 장수 계산 함수
 # --------------------------------------------------------
 def mats_from_area(area_cm2, mat_side_cm):
-    if area_cm2 <= 0: return 0
+    if area_cm2 <= 0:
+        return 0
 
     mat_area = mat_side_cm * mat_side_cm
     raw = area_cm2 / mat_area
@@ -43,8 +45,10 @@ def mats_from_area(area_cm2, mat_side_cm):
     else:
         mats = math.ceil(raw)
 
-    mats = int(mats * 1.10)
+    mats = int(mats * 1.10)  # +10% 여유
+
     return max(mats, 0)
+
 
 # --------------------------------------------------------
 # 평수 기반 간편측정
@@ -58,7 +62,7 @@ def simple_mode_calc(pyeong, area_type, expand, mat_cm):
     }
 
     mats_800 = pyeong * factor_800[area_type]
-    base_area = mats_800 * (80 ** 2)
+    base_area = mats_800 * (80 ** 2)  # 800×800 기준 면적
 
     mats = mats_from_area(base_area, mat_cm)
 
@@ -67,16 +71,15 @@ def simple_mode_calc(pyeong, area_type, expand, mat_cm):
 
     return max(mats, 0)
 
+
 # --------------------------------------------------------
-# 인쇄용 견적서 HTML 생성 (A안) — ※★ 수정된 부분: serial_no 추가 ★※
+# 견적서 HTML 생성
 # --------------------------------------------------------
 def build_estimate_html(
-    serial_no,   # ← 추가됨
-    name, phone, addr, detail, install_date,
+    estimate_id, name, phone, addr, detail, install_date,
     material, size, mats,
     material_cost, install_cost, total_cost
 ):
-
     html = f"""
 <html>
 <head>
@@ -87,34 +90,53 @@ def build_estimate_html(
 body {{
     font-family: 'Noto Sans KR', sans-serif;
     padding: 40px;
+    background: #ffffff;
 }}
+
+h1 {{
+    text-align: center;
+    color: #1E88E5;
+    margin-bottom: 30px;
+    font-size: 30px;
+}}
+
 .section {{
     border: 1px solid #d9d9d9;
     border-radius: 12px;
     padding: 20px;
     margin-bottom: 25px;
 }}
+
 .title {{
     font-size: 20px;
     font-weight: bold;
     margin-bottom: 10px;
 }}
+
 .row {{
-    margin: 5px 0;
+    margin: 6px 0;
+    font-size: 16px;
 }}
+
 .value {{
     font-weight: bold;
 }}
+
 </style>
 
 </head>
 <body>
 
-<h1 style="text-align:center; color:#1E88E5;">견적서</h1>
+<h1>견적서</h1>
+
+<div class="section">
+    <div class="title">■ 견적 정보</div>
+    <div class="row">견적번호: <span class="value">{estimate_id}</span></div>
+    <div class="row">작성일: <span class="value">{datetime.date.today()}</span></div>
+</div>
 
 <div class="section">
     <div class="title">■ 고객 정보</div>
-    <div class="row">견적번호: <span class="value">{serial_no}</span></div>
     <div class="row">고객명: <span class="value">{name}</span></div>
     <div class="row">연락처: <span class="value">{phone}</span></div>
     <div class="row">주소: <span class="value">{addr} {detail}</span></div>
@@ -132,7 +154,7 @@ body {{
     <div class="title">■ 비용 내역</div>
     <div class="row">재료비: <span class="value">{material_cost:,} 원</span></div>
     <div class="row">시공비: <span class="value">{install_cost:,} 원</span></div>
-    <div class="row" style="margin-top:15px; font-size:18px;">
+    <div class="row" style="margin-top:15px; font-size:19px;">
         최종 견적(VAT 포함): <span class="value">{total_cost:,} 원</span>
     </div>
 </div>
@@ -147,6 +169,7 @@ window.onload = function() {{
 </html>
 """
     return html
+
 
 # --------------------------------------------------------
 # 로그인 화면
@@ -165,13 +188,22 @@ def login_page():
         else:
             st.error("로그인 정보가 올바르지 않습니다.")
 
+
 # --------------------------------------------------------
-# 메인 계산기 — ※★ serial_no 생성 추가 ★※
+# 메인 계산기
 # --------------------------------------------------------
 def calculator():
     show_logo()
     st.markdown("<h2 style='text-align:center;'>견적프로그램</h2>", unsafe_allow_html=True)
 
+    # 견적번호 생성
+    today = datetime.date.today().strftime("%Y%m%d")
+    if "counter" not in st.session_state:
+        st.session_state["counter"] = 1
+
+    estimate_id = f"ISOL-{today}-{st.session_state['counter']:03d}"
+
+    # 고객 정보
     st.subheader("고객 정보")
     name = st.text_input("고객명")
     phone = st.text_input("연락처")
@@ -179,26 +211,23 @@ def calculator():
     detail = st.text_input("상세 주소")
     install_date = st.date_input("시공 희망일")
 
+    # 매트 단가표 (확정 단가 적용)
+    mat_unit_price = {
+        "일반 TPU": {600: 22000, 700: 30000, 800: 39000, 1000: 61000, 1200: 88000},
+        "프리미엄 TPU": {600: 24000, 700: 32000, 800: 42000, 1000: 66000, 1200: 94500},
+        "패브릭 TPU": {600: 28000, 700: 38500, 800: 50000, 1000: 78000, 1200: 112500},
+    }
+
+    install_price = {600: 3600, 700: 4900, 800: 6400, 1000: 10000, 1200: 14400}
+
     st.subheader("매트 선택")
-    material = st.selectbox("재질", ["일반 TPU", "프리미엄 TPU", "패브릭 TPU"])
+    material = st.selectbox("재질", list(mat_unit_price.keys()))
     size = st.selectbox("크기", ["600×600", "700×700", "800×800", "1000×1000", "1200×1200"])
 
     side_mm = int(size.split("×")[0])
     mat_cm = side_mm / 10
 
-    mat_unit_price = {
-        "일반 TPU": {600: 35000, 700: 42000, 800: 50000, 1000: 78000, 1200: 98000},
-        "프리미엄 TPU": {600: 38000, 700: 45000, 800: 53000, 1000: 82000, 1200: 103000},
-        "패브릭 TPU": {600: 45000, 700: 52000, 800: 60000, 1000: 90000, 1200: 120000},
-    }
-
-    install_unit = {
-        600: 3600, 700: 4900, 800: 6400, 1000: 10000, 1200: 14400
-    }
-
-    price_mat = mat_unit_price[material][side_mm]
-    price_install = install_unit[side_mm]
-
+    # 계산 모드 선택
     st.subheader("계산모드")
     mode = st.selectbox("선택", ["간편측정", "실제측정"])
 
@@ -228,7 +257,11 @@ def calculator():
             mats = mats_from_area(area, mat_cm)
             st.success(f"총 매트 수량: {mats} 장")
 
+    # 견적 출력
     if mats > 0:
+        price_mat = mat_unit_price[material][side_mm]
+        price_install = install_price[side_mm]
+
         material_cost = mats * price_mat
         install_cost = mats * price_install
         total_cost = int((material_cost + install_cost) * 1.10)
@@ -238,20 +271,20 @@ def calculator():
         st.info(f"시공비: {install_cost:,} 원")
         st.success(f"최종 견적(VAT 포함): {total_cost:,} 원")
 
-        # ★ 견적번호 생성 추가 ★
-        serial_no = "ISOL-" + datetime.date.today().strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:6]
+        # 견적번호 증가
+        st.session_state["counter"] += 1
 
+        # HTML 인쇄 생성
         html = build_estimate_html(
-            serial_no,
-            name, phone, addr, detail, install_date,
-            material, size, mats,
-            material_cost, install_cost, total_cost
+            estimate_id, name, phone, addr, detail, install_date,
+            material, size, mats, material_cost, install_cost, total_cost
         )
 
         b64 = base64.b64encode(html.encode()).decode()
-        href = f'<a href="data:text/html;base64,{b64}" download="estimate.html" target="_blank">📄 견적서 인쇄하기</a>'
+        href = f'<a href="data:text/html;base64,{b64}" download="{estimate_id}.html" target="_blank">📄 견적서 인쇄하기</a>'
 
         st.markdown(href, unsafe_allow_html=True)
+
 
 # --------------------------------------------------------
 # 실행
