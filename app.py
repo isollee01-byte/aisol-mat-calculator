@@ -191,7 +191,7 @@ def calculator():
     today = datetime.date.today().strftime("%Y%m%d")
 
     # 🔥 변경된 부분: 견적번호 = 날짜 + 현재시간(HHMM)
-    now = datetime.datetime.now().strftime("%H%M")
+    now = (datetime.datetime.utcnow() + datetime.timedelta(hours=9)).strftime("%H%M")
     estimate_id = f"ISOL-{today}-{now}"
 
     # 나머지는 전부 동일
