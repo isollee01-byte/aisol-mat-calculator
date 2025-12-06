@@ -2,6 +2,7 @@ import streamlit as st
 import math
 import base64
 from datetime import datetime
+import streamlit.components.v1 as components
 
 
 # --------------------------------------------------------
@@ -23,11 +24,11 @@ def get_base64(file):
 
 def show_logo():
     try:
-        logo_code = get_base64("isollogo.png")
+        logo = get_base64("isollogo.png")
         st.markdown(
             f"""
             <div style="text-align:center; margin-bottom:8px;">
-                <img src="data:image/png;base64,{logo_code}" width="120">
+                <img src="data:image/png;base64,{logo}" width="120">
             </div>
             """,
             unsafe_allow_html=True,
@@ -37,7 +38,7 @@ def show_logo():
 
 
 # --------------------------------------------------------
-# 가격표(사이즈별 단가 적용)
+# 가격표(면적 비례 반영 완료)
 # --------------------------------------------------------
 PRICE_TABLE = {
     "일반 TPU":   {600:22000, 700:30000, 800:39000, 1000:61000, 1200:88000},
@@ -47,17 +48,17 @@ PRICE_TABLE = {
 
 
 # --------------------------------------------------------
-# 시공비 계산 (앞자리 × mm)
+# 시공비 (앞자리 × 길이 mm)
 # --------------------------------------------------------
-def get_install_cost(side_mm):
+def get_install_cost_per_piece(side_mm):
     front = side_mm // 100
-    return front * side_mm
+    return front * side_mm   # ex: 600 → 6×600 = 3600
 
 
 # --------------------------------------------------------
-# 장수 계산
+# 장수 계산 함수 (고정, 실측 동일)
 # --------------------------------------------------------
-def calc_mats(total_area_cm2, side_cm):
+def calc_mats_from_area(total_area_cm2, side_cm):
     if total_area_cm2 <= 0:
         return 0
 
@@ -77,7 +78,7 @@ def calc_mats(total_area_cm2, side_cm):
 
 
 # --------------------------------------------------------
-# 평형계수(800×800 기준)
+# 800×800 기준 평수 factor
 # --------------------------------------------------------
 FACTOR_800 = {
     "거실": 0.93,
@@ -87,10 +88,11 @@ FACTOR_800 = {
 }
 
 
-def calc_simple(pyeong, area_type, expand_type, side_cm):
-    m800 = pyeong * FACTOR_800[area_type]
-    total_area = m800 * (80 * 80)
-    mats = calc_mats(total_area, side_cm)
+def calc_simple_mode(pyeong, area_type, expand_type, side_cm):
+    mats_800 = pyeong * FACTOR_800[area_type]
+
+    base_area = mats_800 * (80**2)
+    mats = calc_mats_from_area(base_area, side_cm)
 
     if expand_type == "비확장형" and side_cm == 80:
         mats = max(mats - 8, 1)
@@ -99,9 +101,9 @@ def calc_simple(pyeong, area_type, expand_type, side_cm):
 
 
 # --------------------------------------------------------
-# 견적서 HTML 생성 (A안)
+# 견적서 HTML 생성 (A안 고급형)
 # --------------------------------------------------------
-def build_estimate_html(
+def build_html(
     serial_no, name, phone, addr, date,
     material, size, mats, mat_cost, install_cost, total_cost
 ):
@@ -110,46 +112,46 @@ def build_estimate_html(
     return f"""
     <html>
     <head>
-        <style>
-            body {{
-                font-family: Arial;
-                padding: 40px;
-            }}
-            .title {{
-                text-align:center;
-                font-size:28px;
-                margin-bottom:20px;
-                font-weight:700;
-                color:#1A3C8E;
-            }}
-            .box {{
-                border:1px solid #ddd;
-                padding:15px;
-                border-radius:10px;
-                background:#f4f8ff;
-                margin-bottom:20px;
-            }}
-            table {{
-                width:100%;
-                border-collapse:collapse;
-                margin-top:20px;
-            }}
-            th, td {{
-                border:1px solid #bbb;
-                padding:10px;
-            }}
-            th {{
-                background:#eaf1ff;
-            }}
-            .total {{
-                font-size:20px;
-                font-weight:700;
-            }}
-        </style>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            padding: 30px;
+        }}
+        .box {{
+            border: 1px solid #ddd;
+            padding: 18px;
+            border-radius: 10px;
+            margin-bottom: 18px;
+            background: #f8fbff;
+        }}
+        .title {{
+            text-align:center;
+            font-size:28px;
+            font-weight:700;
+            margin-bottom:20px;
+            color:#1A3C8E;
+        }}
+        table {{
+            width:100%;
+            border-collapse:collapse;
+            margin-top:12px;
+        }}
+        th, td {{
+            border:1px solid #bbb;
+            padding:10px;
+        }}
+        th {{
+            background:#e9f0ff;
+        }}
+        .total {{
+            font-size:20px;
+            font-weight:700;
+            color:#000;
+        }}
+    </style>
     </head>
 
     <body>
-
         <div style="text-align:center;">
             <img src="data:image/png;base64,{logo}" width="110">
         </div>
@@ -184,7 +186,6 @@ def build_estimate_html(
                 window.print();
             }};
         </script>
-
     </body>
     </html>
     """
@@ -195,9 +196,9 @@ def build_estimate_html(
 # --------------------------------------------------------
 def main():
     show_logo()
+
     st.markdown("<h1 style='text-align:center;'>견적프로그램</h1>", unsafe_allow_html=True)
 
-    # 고객 정보
     st.subheader("🧾 고객 정보")
     name = st.text_input("고객명")
     phone = st.text_input("연락처")
@@ -205,33 +206,29 @@ def main():
     detail = st.text_input("상세주소")
     install_date = st.date_input("시공 희망일")
 
-    # 재질 선택
     st.subheader("📌 매트 재질 선택")
     material = st.selectbox("재질", ["일반 TPU", "프리미엄 TPU", "패브릭 TPU"])
 
-    # 사이즈 선택
     st.subheader("📌 매트 크기 선택")
-    size_str = st.selectbox("사이즈", ["600×600","700×700","800×800","1000×1000","1200×1200"])
-
+    size_str = st.selectbox("사이즈 선택", ["600×600","700×700","800×800","1000×1000","1200×1200"])
     side_mm = int(size_str.split("×")[0])
     side_cm = side_mm / 10
 
     unit_price = PRICE_TABLE[material][side_mm]
-    install_unit = get_install_cost(side_mm)
+    install_unit = get_install_cost_per_piece(side_mm)
 
-    # 계산 모드
     st.subheader("📌 계산 모드")
-    mode = st.selectbox("방식", ["간편측정", "실제측정"])
+    mode = st.selectbox("계산 방식", ["간편측정", "실제측정"])
 
     mats = 0
 
     if mode == "간편측정":
         p = st.number_input("평수 입력", min_value=1)
         area = st.selectbox("범위", list(FACTOR_800.keys()))
-        exp = st.selectbox("확장 여부", ["확장형", "비확장형"])
+        exp = st.selectbox("확장 여부", ["확장형","비확장형"])
 
         if st.button("계산하기"):
-            mats = calc_simple(p, area, exp, side_cm)
+            mats = calc_simple_mode(p, area, exp, side_cm)
             st.success(f"필요 수량: {mats} 장")
 
     else:
@@ -245,11 +242,14 @@ def main():
             total_area += w*h
 
         if st.button("계산하기"):
-            mats = calc_mats(total_area, side_cm)
+            mats = calc_mats_from_area(total_area, side_cm)
             st.success(f"필요 수량: {mats} 장")
 
-    # 견적 출력
+    # --------------------------------------------------------
+    # 견적 결과 출력 및 인쇄창 생성
+    # --------------------------------------------------------
     if mats > 0:
+
         mat_cost = mats * unit_price
         install_cost = mats * install_unit
         total_cost = int((mat_cost + install_cost) * 1.10)
@@ -261,17 +261,23 @@ def main():
 
         serial = f"ISOL-{datetime.now().strftime('%Y%m%d')}-{datetime.now().strftime('%H%M%S')}"
 
-        # 견적서 보기 버튼 -> 인쇄 전용 페이지 렌더링
-        if st.button("🖨 견적서 인쇄"):
-            html = build_estimate_html(
-                serial, name, phone,
-                addr + " " + detail,
-                install_date,
-                material, size_str,
-                mats, mat_cost, install_cost, total_cost
-            )
+        html = build_html(
+            serial, name, phone, addr+" "+detail,
+            install_date, material, size_str,
+            mats, mat_cost, install_cost, total_cost
+        )
 
-            st.markdown(html, unsafe_allow_html=True)
+        if st.button("🖨 견적서 인쇄하기"):
+            components.html(
+                f"""
+                <script>
+                    var w = window.open("", "_blank");
+                    w.document.write(`{html}`);
+                    w.document.close();
+                </script>
+                """,
+                height=0, width=0
+            )
 
 
 main()
