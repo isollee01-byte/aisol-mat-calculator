@@ -12,7 +12,7 @@ st.set_page_config(page_title="견적프로그램", layout="centered")
 
 
 # --------------------------------------------------------
-# Google Sheet 저장 함수
+# Google Sheet 저장 함수 (open_by_key 버전)
 # --------------------------------------------------------
 def save_to_sheet(row_data):
     scope = [
@@ -20,12 +20,14 @@ def save_to_sheet(row_data):
         "https://www.googleapis.com/auth/drive"
     ]
 
-    # Streamlit Cloud Secrets 사용
+    # Streamlit Secrets 사용
     creds_dict = st.secrets["gcp_service_account"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
 
-    sheet = client.open("ISOL_ESTIMATE_DB").sheet1
+    # 🔥 파일 제목 검색 실패를 방지하고, ID로 직접 접근
+    sheet = client.open_by_key("1dW_35nl88eyHv8VebJt2sIGjKnLA8pUV2s5sRwedXB0").sheet1
+
     sheet.append_row(row_data)
 
 
