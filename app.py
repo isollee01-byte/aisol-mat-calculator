@@ -1,3 +1,6 @@
+st.write("Loaded service account email:")
+st.write(st.secrets["gcp_service_account"]["client_email"])
+
 import streamlit as st
 import math
 import base64
