@@ -1,44 +1,51 @@
+# ---------------------------
+# GOOGLE ACCESS DEBUG FUNCTION
+# ---------------------------
 def debug_google_access():
     import traceback
+    import gspread
+    from oauth2client.service_account import ServiceAccountCredentials
+
+    st.write("=== DEBUG ACCESS TEST ===")
+
     scope = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
 
-    st.write("=== DEBUG ACCESS TEST ===")
-
     try:
+        st.write("📌 1) OAuth 인증 시도 중…")
+
         creds = ServiceAccountCredentials.from_json_keyfile_dict(
             st.secrets["gcp_service_account"], scope
         )
         client = gspread.authorize(creds)
-        st.success("OAuth 인증 성공!")
+
+        st.success("✅ OAuth 인증 성공!")
     except Exception as e:
-        st.error("OAuth 인증 단계에서 실패")
+        st.error("❌ OAuth 인증 실패")
         st.write(e)
         st.write(traceback.format_exc())
         return
 
     try:
-        st.write("스프레드시트 열기 시도 중…")
+        st.write("📌 2) 스프레드시트 접근 시도…")
+
         sh = client.open_by_key("1dW_35nl88eyHv8VebJt2sIGjKnLA8pUV2s5sRwedXB0")
-        st.success("스프레드시트 접근 성공!")
+
+        st.success("✅ 스프레드시트 접근 성공!")
     except Exception as e:
-        st.error("스프레드시트 접근 실패 (PermissionError 가능)")
+        st.error("❌ 스프레드시트 접근 실패 (PermissionError 가능)")
         st.write(e)
         st.write(traceback.format_exc())
         return
 
+
+# ---------------------------
+# DEBUG BUTTON
+# ---------------------------
 st.button("🔧 Google Debug Test 실행", on_click=debug_google_access)
 
-import streamlit as st
-
-st.write("=== DEBUG: Loaded service account email ===")
-
-try:
-    st.write(st.secrets["gcp_service_account"]["client_email"])
-except Exception as e:
-    st.error(f"Secrets 로드 실패: {e}")
 
 
 import streamlit as st
