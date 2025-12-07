@@ -1,5 +1,12 @@
-st.write("Loaded service account email:")
-st.write(st.secrets["gcp_service_account"]["client_email"])
+import streamlit as st
+
+st.write("=== DEBUG: Loaded service account email ===")
+
+try:
+    st.write(st.secrets["gcp_service_account"]["client_email"])
+except Exception as e:
+    st.error(f"Secrets 로드 실패: {e}")
+
 
 import streamlit as st
 import math
