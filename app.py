@@ -1,148 +1,278 @@
 import streamlit as st
-import gspread
-from google.oauth2.service_account import Credentials
-from datetime import datetime
+import math
+import base64
+import datetime
 
+# --------------------------------------------------------
+# 기본 설정
+# --------------------------------------------------------
+st.set_page_config(page_title="견적프로그램", layout="centered")
 
-# ----------------------------
-# Google Sheets 인증
-# ----------------------------
-def get_gsheet_client():
+# --------------------------------------------------------
+# 로고 표시 함수
+# --------------------------------------------------------
+def get_base64(file):
+    with open(file, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+def show_logo():
     try:
-        creds_dict = st.secrets["gcp_service_account"]
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        client = gspread.authorize(credentials)
-        return client
-    except Exception as e:
-        st.error(f"[ERROR] Google 인증 실패: {e}")
-        return None
-
-
-# ----------------------------
-# Google Sheets 저장 함수
-# ----------------------------
-def save_to_sheet(data: dict):
-    SPREADSHEET_KEY = "1dW_35nI88eyHv8VebJt2slGjKnLA8pUV2s5sRwedXB0"  # 🔧 회장님 키 입력
-    SHEET_NAME = "Sheet1"   # 🔧 실제 시트 이름
-
-    try:
-        client = get_gsheet_client()
-        if client is None:
-            st.error("Google 인증 실패로 저장 중단됨.")
-            return
-
-        sheet = client.open_by_key(SPREADSHEET_KEY).worksheet(SHEET_NAME)
-
-        new_row = [
-            data.get("timestamp", ""),
-            data.get("estimate_id", ""),
-            data.get("name", ""),
-            data.get("phone", ""),
-            data.get("address", ""),
-            data.get("size", ""),
-            data.get("qty", ""),
-            data.get("material", ""),
-            data.get("total_cost", ""),
-        ]
-
-        sheet.append_row(new_row, value_input_option="RAW")
-        st.success("Google Sheets 저장 성공!")
-
-    except Exception as e:
-        st.error(f"[ERROR] 시트 저장 실패: {e}")
-
-
-# ----------------------------
-# 🔧 디버그 함수 — 로그인 후에만 보여줌
-# ----------------------------
-def debug_google_access():
-
-    st.subheader("🔧 Google Debug Test")
-
-    try:
-        st.write("서비스 계정 이메일:", st.secrets["gcp_service_account"]["client_email"])
+        logo = get_base64("isollogo.png")
+        st.markdown(
+            f"<div style='text-align:center; margin-bottom:15px;'><img src='data:image/png;base64,{logo}' width='130'></div>",
+            unsafe_allow_html=True,
+        )
     except:
-        st.error("서비스 계정 이메일 로딩 실패")
-
-    try:
-        client = get_gsheet_client()
-        st.write("Google Client:", client)
-
-        SPREADSHEET_KEY = "1dW_35nI88eyHv8VebJt2slGjKnLA8pUV2s5sRwedXB0"
-
-        sh = client.open_by_key(SPREADSHEET_KEY)
-        st.success(f"스프레드시트 접근 성공: {sh.title}")
-
-    except Exception as e:
-        st.error(f"Debug 오류: {e}")
+        st.warning("로고 파일(isollogo.png)을 찾을 수 없습니다.")
 
 
-# ----------------------------
-# 로그인 페이지
-# ----------------------------
+# --------------------------------------------------------
+# 장수 계산 함수
+# --------------------------------------------------------
+def mats_from_area(area_cm2, mat_side_cm):
+    if area_cm2 <= 0:
+        return 0
+
+    mat_area = mat_side_cm * mat_side_cm
+    raw = area_cm2 / mat_area
+
+    frac = raw - int(raw)
+    if frac <= 0.3:
+        mats = int(raw)
+    elif frac >= 0.6:
+        mats = int(raw) + 1
+    else:
+        mats = math.ceil(raw)
+
+    mats = int(mats * 1.10)
+    return max(mats, 0)
+
+
+# --------------------------------------------------------
+# 평수 기반 간편측정
+# --------------------------------------------------------
+def simple_mode_calc(pyeong, area_type, expand, mat_cm):
+    factor_800 = {
+        "거실": 0.93,
+        "거실+복도": 1.46,
+        "거실+복도+아이방1": 1.67,
+        "거실+복도+주방": 2.0,
+    }
+
+    mats_800 = pyeong * factor_800[area_type]
+    base_area = mats_800 * (80 ** 2)
+
+    mats = mats_from_area(base_area, mat_cm)
+
+    if expand == "비확장형":
+        mats -= 8
+
+    return max(mats, 0)
+
+
+# --------------------------------------------------------
+# 견적서 HTML 생성
+# --------------------------------------------------------
+def build_estimate_html(
+    estimate_id, name, phone, addr, detail, install_date,
+    material, size, mats,
+    material_cost, install_cost, total_cost
+):
+    html = f"""
+<html>
+<head>
+<meta charset="UTF-8">
+<title>견적서</title>
+
+<style>
+body {{
+    font-family: 'Noto Sans KR', sans-serif;
+    padding: 40px;
+    background: #ffffff;
+}}
+h1 {{
+    text-align: center;
+    color: #1E88E5;
+    margin-bottom: 30px;
+    font-size: 30px;
+}}
+.section {{
+    border: 1px solid #d9d9d9;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 25px;
+}}
+.title {{
+    font-size: 20px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}}
+.row {{
+    margin: 6px 0;
+    font-size: 16px;
+}}
+.value {{
+    font-weight: bold;
+}}
+</style>
+
+</head>
+<body>
+
+<h1>견적서</h1>
+
+<div class="section">
+    <div class="title">■ 견적 정보</div>
+    <div class="row">견적번호: <span class="value">{estimate_id}</span></div>
+    <div class="row">작성일: <span class="value">{datetime.date.today()}</span></div>
+</div>
+
+<div class="section">
+    <div class="title">■ 고객 정보</div>
+    <div class="row">고객명: <span class="value">{name}</span></div>
+    <div class="row">연락처: <span class="value">{phone}</span></div>
+    <div class="row">주소: <span class="value">{addr} {detail}</span></div>
+    <div class="row">시공희망일: <span class="value">{install_date}</span></div>
+</div>
+
+<div class="section">
+    <div class="title">■ 시공 내용</div>
+    <div class="row">매트 재질: <span class="value">{material}</span></div>
+    <div class="row">매트 크기: <span class="value">{size}</span></div>
+    <div class="row">필요 매트 수량: <span class="value">{mats} 장</span></div>
+</div>
+
+<div class="section">
+    <div class="title">■ 비용 내역</div>
+    <div class="row">재료비: <span class="value">{material_cost:,} 원</span></div>
+    <div class="row">시공비: <span class="value">{install_cost:,} 원</span></div>
+    <div class="row" style="margin-top:15px; font-size:19px;">
+        최종 견적(VAT 포함): <span class="value">{total_cost:,} 원</span>
+    </div>
+</div>
+
+<script>
+window.onload = function() {{
+    window.print();
+}}
+</script>
+
+</body>
+</html>
+"""
+    return html
+
+
+# --------------------------------------------------------
+# 로그인 화면
+# --------------------------------------------------------
 def login_page():
-
-    st.title("ISOL 견적 프로그램")
+    show_logo()
+    st.markdown("<h2 style='text-align:center;'>견적프로그램</h2>", unsafe_allow_html=True)
 
     user = st.text_input("아이디")
     pw = st.text_input("비밀번호", type="password")
 
     if st.button("로그인"):
-        if user == "isol" and pw == "1234":   # 🔧 회장님 맞게 수정 가능
+        if user == "isol25" and pw == "isol202512!":
             st.session_state["login"] = True
-            st.experimental_rerun()
+            st.rerun()
         else:
-            st.error("로그인 실패")
+            st.error("로그인 정보가 올바르지 않습니다.")
 
 
-# ----------------------------
-# 견적 계산 페이지
-# ----------------------------
+# --------------------------------------------------------
+# 메인 계산기
+# --------------------------------------------------------
 def calculator():
+    show_logo()
+    st.markdown("<h2 style='text-align:center;'>견적프로그램</h2>", unsafe_allow_html=True)
 
-    st.header("견적 입력")
+    today = datetime.date.today().strftime("%Y%m%d")
 
+    # 🔥 변경된 부분: 견적번호 = 날짜 + 현재시간(HHMM)
+    now = (datetime.datetime.utcnow() + datetime.timedelta(hours=9)).strftime("%H%M")
+    estimate_id = f"ISOL-{today}-{now}"
+
+    # 나머지는 전부 동일
+    st.subheader("고객 정보")
     name = st.text_input("고객명")
-    phone = st.text_input("전화번호")
-    address = st.text_input("주소")
+    phone = st.text_input("연락처")
+    addr = st.text_input("주소")
+    detail = st.text_input("상세 주소")
+    install_date = st.date_input("시공 희망일")
 
-    size = st.text_input("매트 크기")
-    qty = st.number_input("매트 수량", min_value=1, step=1)
-    material = st.selectbox("재질", ["TPU", "PU", "Fabric", "기타"])
+    mat_unit_price = {
+        "일반 TPU": {600: 22000, 700: 30000, 800: 39000, 1000: 61000, 1200: 88000},
+        "프리미엄 TPU": {600: 24000, 700: 32000, 800: 42000, 1000: 66000, 1200: 94500},
+        "패브릭 TPU": {600: 28000, 700: 38500, 800: 50000, 1000: 78000, 120000: 112500},
+    }
 
-    total_cost = qty * 30000  # 🔧 임시 계산 예시
-    st.write(f"총 견적(VAT 포함): {total_cost:,} 원")
+    install_price = {600: 3600, 700: 4900, 800: 6400, 10000: 10000, 12000: 14400}
 
-    if st.button("견적 저장"):
-        estimate_id = f"EST-{int(datetime.now().timestamp())}"
+    st.subheader("매트 선택")
+    material = st.selectbox("재질", list(mat_unit_price.keys()))
+    size = st.selectbox("크기", ["600×600", "700×700", "800×800", "1000×1000", "1200×1200"])
 
-        data = {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "estimate_id": estimate_id,
-            "name": name,
-            "phone": phone,
-            "address": address,
-            "size": size,
-            "qty": qty,
-            "material": material,
-            "total_cost": total_cost
-        }
+    side_mm = int(size.split("×")[0])
+    mat_cm = side_mm / 10
 
-        save_to_sheet(data)
+    st.subheader("계산모드")
+    mode = st.selectbox("선택", ["간편측정", "실제측정"])
 
-    st.divider()
+    mats = 0
 
-    # 로그인 후에만 디버그 버튼 보이게
-    st.button("🔧 Google Debug Test 실행", on_click=debug_google_access)
+    if mode == "간편측정":
+        p = st.number_input("평수", min_value=1)
+        area_type = st.selectbox("범위", ["거실", "거실+복도", "거실+복도+아이방1", "거실+복도+주방"])
+        expand = st.selectbox("확장여부", ["확장형", "비확장형"])
+
+        if st.button("계산하기"):
+            mats = simple_mode_calc(p, area_type, expand, mat_cm)
+            st.success(f"총 매트 수량: {mats} 장")
+
+    else:
+        st.subheader("실측 입력")
+        zones = ["거실", "복도", "주방", "안방", "아이방1", "아이방2"]
+
+        area = 0
+        for z in zones:
+            col1, col2 = st.columns(2)
+            w = col1.number_input(f"{z} 가로(cm)", min_value=0.0)
+            h = col2.number_input(f"{z} 세로(cm)", min_value=0.0)
+            area += w * h
+
+        if st.button("계산하기"):
+            mats = mats_from_area(area, mat_cm)
+            st.success(f"총 매트 수량: {mats} 장")
+
+    if mats > 0:
+        price_mat = mat_unit_price[material][side_mm]
+        price_install = install_price[side_mm]
+
+        material_cost = mats * price_mat
+        install_cost = mats * price_install
+        total_cost = int((material_cost + install_cost) * 1.10)
+
+        st.subheader("견적 결과")
+        st.info(f"재료비: {material_cost:,} 원")
+        st.info(f"시공비: {install_cost:,} 원")
+        st.success(f"최종 견적(VAT 포함): {total_cost:,} 원")
+
+        html = build_estimate_html(
+            estimate_id, name, phone, addr, detail, install_date,
+            material, size, mats, material_cost, install_cost, total_cost
+        )
+
+        b64 = base64.b64encode(html.encode()).decode()
+        href = f'<a href="data:text/html;base64,{b64}" download="{estimate_id}.html" target="_blank">📄 견적서 인쇄하기</a>'
+
+        st.markdown(href, unsafe_allow_html=True)
 
 
-# ----------------------------
-# APP ENTRY
-# ----------------------------
+# --------------------------------------------------------
+# 실행
+# --------------------------------------------------------
 if "login" not in st.session_state:
     st.session_state["login"] = False
 
