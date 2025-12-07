@@ -2,27 +2,51 @@ import streamlit as st
 import math
 import base64
 import datetime
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 # --------------------------------------------------------
 # 기본 설정
 # --------------------------------------------------------
 st.set_page_config(page_title="견적프로그램", layout="centered")
 
+
+# --------------------------------------------------------
+# Google Sheet 저장 함수
+# --------------------------------------------------------
+def save_to_sheet(row_data):
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+
+    # Streamlit Cloud Secrets 사용
+    creds_dict = st.secrets["gcp_service_account"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+
+    sheet = client.open("ISOL_ESTIMATE_DB").sheet1
+    sheet.append_row(row_data)
+
+
 # --------------------------------------------------------
 # 로고 표시 함수
 # --------------------------------------------------------
 def get_base64(file):
-    with open(file, "rb") as f:
-        return base64.b64encode(f.read()).decode()
+    try:
+        with open(file, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    except:
+        return None
 
 def show_logo():
-    try:
-        logo = get_base64("isollogo.png")
+    logo = get_base64("isollogo.png")
+    if logo:
         st.markdown(
             f"<div style='text-align:center; margin-bottom:15px;'><img src='data:image/png;base64,{logo}' width='130'></div>",
             unsafe_allow_html=True,
         )
-    except:
+    else:
         st.warning("로고 파일(isollogo.png)을 찾을 수 없습니다.")
 
 
@@ -189,12 +213,9 @@ def calculator():
     st.markdown("<h2 style='text-align:center;'>견적프로그램</h2>", unsafe_allow_html=True)
 
     today = datetime.date.today().strftime("%Y%m%d")
-
-    # 🔥 변경된 부분: 견적번호 = 날짜 + 현재시간(HHMM)
     now = (datetime.datetime.utcnow() + datetime.timedelta(hours=9)).strftime("%H%M")
     estimate_id = f"ISOL-{today}-{now}"
 
-    # 나머지는 전부 동일
     st.subheader("고객 정보")
     name = st.text_input("고객명")
     phone = st.text_input("연락처")
@@ -259,6 +280,20 @@ def calculator():
         st.info(f"시공비: {install_cost:,} 원")
         st.success(f"최종 견적(VAT 포함): {total_cost:,} 원")
 
+        # 🔥 Google Sheet에 저장
+        save_to_sheet([
+            str(datetime.date.today()),
+            estimate_id,
+            name,
+            phone,
+            addr + " " + detail,
+            size,
+            mats,
+            material,
+            total_cost
+        ])
+
+        # 견적서 HTML 생성
         html = build_estimate_html(
             estimate_id, name, phone, addr, detail, install_date,
             material, size, mats, material_cost, install_cost, total_cost
@@ -266,7 +301,6 @@ def calculator():
 
         b64 = base64.b64encode(html.encode()).decode()
         href = f'<a href="data:text/html;base64,{b64}" download="{estimate_id}.html" target="_blank">📄 견적서 인쇄하기</a>'
-
         st.markdown(href, unsafe_allow_html=True)
 
 
